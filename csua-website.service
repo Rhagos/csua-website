@@ -1,0 +1,14 @@
+[Unit]
+Description=CSUA Node.js Website Service
+After=csua-website-webpack.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/webserver/csua-website
+ExecStart=/usr/local/bin/node /webserver/csua-website/deploy/serverBundle.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

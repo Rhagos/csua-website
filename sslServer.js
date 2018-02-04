@@ -5,12 +5,17 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 
-import http from 'http';
+import https from 'https';
 
 import * as React from 'react';
 import ReactDOMServer from 'react-dom/server';
 import {StaticRouter} from 'react-router';
 
+var certificate = fs.readFileSync('/etc/letsencrypt/live/www.csua.berkeley.edu/fullchain.pem');
+var privateKey = fs.readFileSync('/etc/letsencrypt/live/www.csua.berkeley.edu/privkey.pem');
+var credentials = { key: privateKey, cert: certificate, requestCert: true };
+
+var sslPort = 8443;
 var port = 8081;
 var legacyPort = 8080;
 
@@ -42,24 +47,16 @@ function sendBase(req, res, next) {
 }
 
 const app = express();
-const server = http.createServer(app);
-
-// Reverse proxy to django site
-const httpProxy = require('http-proxy');
-const apiProxy = httpProxy.createProxyServer({
-  target: 'https://www.csua.berkeley.edu:8080',
-  changeOrigin: true,
-});
-const proxyCall = (req, res) => apiProxy.web(req, res);
-app.all("/media/*", proxyCall);
-app.all("/api/*", proxyCall);
-app.all("/~*", proxyCall);
+const sslServer = https.createServer(credentials, app);
 
 app.all('*', function(req, res, next){
+  console.log('Ping');
   if (req.path.startsWith('/newuser') || req.path.startsWith('/computers')) {
     res.redirect('https://' + req.hostname + ':' + legacyPort + req.path);
-  } else {
-    next();
+    return;
+  }
+  if (req.secure) {
+    return next();
   }
 });
 
@@ -81,10 +78,16 @@ app.get('/bundle.css', function (req, res, next) {
 
 app.get('/', sendBase);
 
-app.use(express.static('./public'));
+app.use(express.static('public'));
 
 app.get('*', sendBase);
 
-server.listen(port,
-  () => console.log('Node/express test server started on port ' + port)
+sslServer.listen(sslPort,
+  () => console.log('Node/express SSL server started on port ' + sslPort)
 );
+
+var server = express();
+server.get('*', function(req, res) {
+  res.redirect('https://' + req.hostname + ':' + sslPort);
+});
+server.listen(port);
